@@ -1,0 +1,246 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  owner
+  admin
+  approver
+  member
+  viewer
+}
+
+enum ProposalStatus {
+  draft
+  submitted
+  approved
+  denied
+  changes_requested
+  completed
+}
+
+enum PurchaseStatus {
+  logged
+  verified
+}
+
+enum LinkStatus {
+  unmatched
+  suggested
+  linked
+}
+
+enum ReceiptStatus {
+  uploaded
+  processing
+  needs_review
+  verified
+  failed
+}
+
+enum ReimburseStatus {
+  owed
+  reimbursed
+}
+
+enum PriceSource {
+  manual
+  amazon
+}
+
+model Org {
+  id                 String   @id @default(cuid())
+  name               String
+  slug               String   @unique
+  currency           String   @default("USD")
+  defaultTaxRateBps  Int      @default(0)
+  imageUrl           String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  memberships        Membership[]
+  proposals          Proposal[]
+  purchases          Purchase[]
+  reimbursements     Reimbursement[]
+  comments           Comment[]
+  auditLogs          AuditLog[]
+  invites            Invite[]
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  image     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  memberships Membership[]
+}
+
+model Membership {
+  userId    String
+  orgId     String
+  role      Role     @default(member)
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id])
+  org       Org      @relation(fields: [orgId], references: [id])
+
+  @@unique([userId, orgId])
+  @@index([orgId])
+}
+
+model Proposal {
+  id            String         @id @default(cuid())
+  orgId         String
+  authorId      String
+  title         String
+  reason        String?
+  status        ProposalStatus @default(draft)
+  currency      String         @default("USD")
+  subtotalCents Int            @default(0)
+  taxCents      Int            @default(0)
+  totalCents    Int            @default(0)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  org           Org            @relation(fields: [orgId], references: [id])
+  items         ProposalItem[]
+  purchases     Purchase[]
+
+  @@index([orgId, status])
+}
+
+model ProposalItem {
+  id                  String      @id @default(cuid())
+  proposalId          String
+  name                String
+  url                 String?
+  normalizedUrl       String?
+  imageUrl            String?
+  qty                 Int         @default(1)
+  unitCents           Int
+  taxable             Boolean     @default(false)
+  taxRateBpsOverride  Int?
+  priceSource         PriceSource @default(manual)
+  priceFetchedAt      DateTime?
+  proposal            Proposal    @relation(fields: [proposalId], references: [id])
+
+  @@index([proposalId])
+}
+
+model Purchase {
+  id            String         @id @default(cuid())
+  orgId         String
+  proposalId    String?
+  authorId      String
+  paidById      String
+  merchant      String?
+  purchasedAt   DateTime       @default(now())
+  currency      String         @default("USD")
+  subtotalCents Int            @default(0)
+  taxCents      Int            @default(0)
+  totalCents    Int            @default(0)
+  status        PurchaseStatus @default(logged)
+  linkStatus    LinkStatus     @default(unmatched)
+  isRefund      Boolean        @default(false)
+  notes         String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  org           Org            @relation(fields: [orgId], references: [id])
+  proposal      Proposal?      @relation(fields: [proposalId], references: [id])
+  receipts      Receipt[]
+  reimbursement Reimbursement?
+
+  @@index([orgId, status])
+}
+
+model Receipt {
+  id                 String        @id @default(cuid())
+  purchaseId         String
+  imageUrl           String
+  ocrStatus          ReceiptStatus @default(uploaded)
+  ocrRawJson         Json?
+  merchant           String?
+  purchasedAt        DateTime?
+  subtotalCents      Int?
+  taxCents           Int?
+  totalCents         Int?
+  confidence         Float?
+  verifiedTotalCents Int?
+  verifiedById       String?
+  verifiedAt         DateTime?
+  purchase           Purchase      @relation(fields: [purchaseId], references: [id])
+
+  @@index([purchaseId])
+}
+
+model Reimbursement {
+  id            String         @id @default(cuid())
+  orgId         String
+  purchaseId    String         @unique
+  payeeId       String
+  amountCents   Int
+  currency      String         @default("USD")
+  status        ReimburseStatus @default(owed)
+  paidViaNote   String?
+  markedPaidById String?
+  markedPaidAt  DateTime?
+  createdAt     DateTime       @default(now())
+  org           Org            @relation(fields: [orgId], references: [id])
+  purchase      Purchase       @relation(fields: [purchaseId], references: [id])
+
+  @@index([orgId, status])
+}
+
+model Comment {
+  id         String   @id @default(cuid())
+  orgId      String
+  proposalId String?
+  purchaseId String?
+  authorId   String
+  body       String
+  createdAt  DateTime @default(now())
+  org        Org      @relation(fields: [orgId], references: [id])
+
+  @@index([proposalId])
+  @@index([purchaseId])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  orgId     String
+  actorId   String
+  action    String
+  entity    String
+  entityId  String
+  diffJson  Json?
+  createdAt DateTime @default(now())
+  org       Org      @relation(fields: [orgId], references: [id])
+
+  @@index([orgId, createdAt])
+}
+
+model Invite {
+  id        String   @id @default(cuid())
+  orgId     String
+  email     String
+  role      Role     @default(member)
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  org       Org      @relation(fields: [orgId], references: [id])
+
+  @@index([orgId])
+}
+
+model PriceCache {
+  normalizedUrl String   @id
+  title         String?
+  imageUrl      String?
+  priceCents    Int?
+  currency      String?
+  fetchedAt     DateTime @default(now())
+}
