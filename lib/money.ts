@@ -11,6 +11,15 @@ export function toMinor(major: number, currency: string): number {
   return Math.round(major * 10 ** d);
 }
 
+export function parseMajorToMinor(
+  input: string,
+  currency: string,
+): number | null {
+  const n = Number(input.trim().replace(/[$,\s]/g, ""));
+  if (!Number.isFinite(n) || n < 0 || n >= 1_000_000_000) return null;
+  return toMinor(n, currency);
+}
+
 export function formatCents(cents: number, currency: string, locale = "en-US"): string {
   const d = currencyDecimals(currency);
   return new Intl.NumberFormat(locale, {
